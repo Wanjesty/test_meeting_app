@@ -1,6 +1,9 @@
 from django.contrib import admin
-from .models import User
+from .models import Profile
 
-@admin.register(User)
-class UserAdmin(admin.ModelAdmin):
-    list_display = ['id', 'image', 'gender', 'name', 'surname', 'email']
+@admin.register(Profile)
+class ProfileAdmin(admin.ModelAdmin):
+    """Карточка пользователя"""
+    
+    fields = ['user', 'image', 'gender', 'name', 'surname', 'email']
+    list_display = ['user', 'image', 'gender', 'name', 'surname', 'email']
