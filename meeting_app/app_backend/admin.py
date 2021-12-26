@@ -5,5 +5,5 @@ from .models import Profile
 class ProfileAdmin(admin.ModelAdmin):
     """Карточка пользователя"""
     
-    fields = ['user', 'image', 'gender', 'name', 'surname', 'email']
-    list_display = ['user', 'image', 'gender', 'name', 'surname', 'email']
+    fields = ['user', 'image', 'gender', 'name', 'surname', 'email'] #Поля для ввода данных
+    list_display = ['pk', 'user', 'image', 'gender', 'name', 'surname', 'email'] #Поля для просмотра данных
