@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from django.http import HttpResponse
 import os, shutil
 from PIL import Image
+import smtplib
 
 
 from .serializers import ProfileSerializers
@@ -57,18 +58,18 @@ class RegisterUserView(APIView):
         user.set_password(str(request.data.get('password')))
         user.save()
         user_profile = User.objects.get(username = request.data.get('username'))
-        profile = Profile.objects.get(user = user_profile)
+        created_user = DataUser(user_profile.pk)
         if 'gender' in request.data:
-            profile.gender = request.data.get('gender')
+            created_user.gender = request.data.get('gender')
         if 'name' in request.data:
-            profile.name = request.data.get('name')
+            created_user.name = request.data.get('name')
         if 'surname' in request.data:
-            profile.surname = request.data.get('surname')
+            created_user.surname = request.data.get('surname')
         if 'email' in request.data:
-            profile.email = request.data.get('email')
+            created_user.email = request.data.get('email')
         if 'image' in request.data:
-            profile.image = add_watermark(request)
-        profile.save()
+            created_user.image = add_watermark(request)
+        created_user.save()
         return HttpResponse("User created", status=status.HTTP_201_CREATED)
 
 
@@ -98,19 +99,18 @@ class ChangeUserProfileView(APIView):
         if users:
             user = users[0]
             if user.check_password(password):
-                user_profile = User.objects.get(username = request.data.get('username'))
-                profile = Profile.objects.get(user = user_profile)
+                modifiable_user = DataUser(user.pk)
                 if 'gender' in request.data:
-                    profile.gender = request.data.get('gender')
+                    modifiable_user.gender = request.data.get('gender')
                 if 'name' in request.data:
-                    profile.name = request.data.get('name')
+                    modifiable_user.name = request.data.get('name')
                 if 'surname' in request.data:
-                    profile.surname = request.data.get('surname')
+                    modifiable_user.surname = request.data.get('surname')
                 if 'email' in request.data:
-                    profile.email = request.data.get('email')
+                    modifiable_user.email = request.data.get('email')
                 if 'image' in request.data:
-                    profile.image = add_watermark(request)
-                profile.save()
+                    modifiable_user.image = add_watermark(request)
+                modifiable_user.save()
                 return HttpResponse("User profile changed", status=status.HTTP_200_OK)
             else:
                 return HttpResponse("Invalid password", status=status.HTTP_200_OK)
@@ -132,27 +132,20 @@ class ProfileAssessmentView(APIView): #Оценка пользователя д�
             if user.check_password(password): # Проверка пароля
                 profile_for_assessment = Profile_evaluations.objects.filter(pk=pk) # Поиск профиля для оценки в БД
                 if profile_for_assessment:
+                    rating_user = DataUser(user.pk)
+                    user_to_rate = DataUser(pk)
                     if request.data.get("assessment") == "like":
-                        user_evalutions = Profile_evaluations.objects.get(user=user)
-                        likes = user_evalutions.liked_profiles
-                        likes.append(pk)
-                        user_evalutions.liked_profiles = likes
-                        user_evalutions.save()
-                        if user_evalutions.pk in profile_for_assessment[0].liked_profiles:
-                            liked_profile = Profile.objects.get(pk=pk)
-                            profile = Profile.objects.get(user=user)
-                            liked_profile.mutual_sympathy.add(profile)
-                            liked_profile.save()
-                            profile.mutual_sympathy.add(liked_profile)
-                            profile.save()
-                            return HttpResponse(f"Mutual sympathy, email: {liked_profile.email}", status=status.HTTP_200_OK)
+                        rating_user.liked_profiles.append(user_to_rate.pk)
+                        rating_user.save()
+                        if rating_user.pk in user_to_rate.liked_profiles:
+                            rating_user.add_mutual_sympathy(user_to_rate.model_Profile)
+                            user_to_rate.add_mutual_sympathy(rating_user.model_Profile)
+                            send_emails(rating_user, user_to_rate)
+                            return HttpResponse(f"Mutual sympathy, email: {user_to_rate.email}", status=status.HTTP_200_OK)
                         return HttpResponse("Profile liked", status=status.HTTP_200_OK)
                     elif request.data.get("assessment") == "dislike":
-                        user_evalutions = Profile_evaluations.objects.get(user=user)
-                        dislikes = user_evalutions.disliked_profiles
-                        dislikes.append(pk)
-                        user_evalutions.disliked_profiles = dislikes
-                        user_evalutions.save()
+                        rating_user.disliked_profiles.append(user_to_rate.pk)
+                        rating_user.save()
                         return HttpResponse("Profile dislaked", status=status.HTTP_200_OK)
                 else:
                     return HttpResponse("No such profile", status=status.HTTP_200_OK)
@@ -173,3 +166,14 @@ def add_watermark(request): #Добавление ватермарки на ка
         os.mkdir("app_backend/user_avatars/" + f"{request.data.get('username')}/")
         transparent.save(save_path)
     return save_path
+
+
+def send_emails(first_user, second_user):
+    smtpObj = smtplib.SMTP('smtp.gmail.com', 587)
+    smtpObj.starttls()
+    smtpObj.login('denisburkovfortest@gmail.com','Denisfortest2022')
+    msg1 = f"Mutual sympathy with {second_user.name}, email: {second_user.email}"
+    msg2 = f"Mutual sympathy with {first_user.name}, email: {first_user.email}"
+    smtpObj.sendmail("denisburkovfortest@gmail.com", first_user.email, msg1)
+    smtpObj.sendmail("denisburkovfortest@gmail.com", second_user.email, msg2)
+    smtpObj.quit() 
