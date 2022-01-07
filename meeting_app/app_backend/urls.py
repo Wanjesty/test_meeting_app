@@ -6,4 +6,5 @@ urlpatterns = [
     path("<int:pk>/match/", views.ProfileAssessmentView.as_view()),
     path("delete/", views.DeleteUserView.as_view()),
     path("change/", views.ChangeUserProfileView.as_view()),
+    
 ]

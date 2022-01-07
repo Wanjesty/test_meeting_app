@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework.views import APIView
-from rest_framework import status
+from rest_framework import status, filters, generics
 from rest_framework.response import Response
 from django.http import HttpResponse
 import os, shutil
@@ -8,7 +8,7 @@ from PIL import Image
 import smtplib
 
 
-from .serializers import ProfileSerializers
+from .serializers import ProfileSerializer, SearchFilterProfilesSerializer
 from .models import Profile, Profile_evaluations
 
 
@@ -121,7 +121,7 @@ class ChangeUserProfileView(APIView):
 class ProfileAssessmentView(APIView): #Оценка пользователя другим пользователем
     def get(self, request, pk):
         profile = Profile.objects.get(pk=pk)
-        serializer = ProfileSerializers(profile)
+        serializer = ProfileSerializer(profile)
         return Response(serializer.data)
     def post(self, request, pk):
         username = request.data.get("username") #Ввод в переменные данных оценивающего пользователя
@@ -151,6 +151,12 @@ class ProfileAssessmentView(APIView): #Оценка пользователя д�
                     return HttpResponse("No such profile", status=status.HTTP_200_OK)
 
 
+class ProfilesListView(generics.ListAPIView):
+    queryset = Profile.objects.all()
+    serializer_class = SearchFilterProfilesSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['gender', 'name', 'surname']
+
 
 def add_watermark(request): #Добавление ватермарки на картинку
     base_image = Image.open(request.data.get('image')).convert("RGBA")
@@ -168,7 +174,7 @@ def add_watermark(request): #Добавление ватермарки на ка
     return save_path
 
 
-def send_emails(first_user, second_user):
+def send_emails(first_user, second_user): #Отправка сообщений пользователям со взаимной симпатией
     smtpObj = smtplib.SMTP('smtp.gmail.com', 587)
     smtpObj.starttls()
     smtpObj.login('denisburkovfortest@gmail.com','Denisfortest2022')
@@ -176,4 +182,6 @@ def send_emails(first_user, second_user):
     msg2 = f"Mutual sympathy with {first_user.name}, email: {first_user.email}"
     smtpObj.sendmail("denisburkovfortest@gmail.com", first_user.email, msg1)
     smtpObj.sendmail("denisburkovfortest@gmail.com", second_user.email, msg2)
-    smtpObj.quit() 
+    smtpObj.quit()
+
+

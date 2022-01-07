@@ -18,10 +18,12 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls.conf import include
+from app_backend import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("api/clients/", include("app_backend.urls"))
+    path("api/clients/", include("app_backend.urls")),
+    path("api/list/", views.ProfilesListView.as_view()),
 ]
 
 if settings.DEBUG:
