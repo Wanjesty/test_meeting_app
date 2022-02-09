@@ -23,6 +23,8 @@ class Profile(models.Model):
     surname = models.CharField("Фамилия", max_length=100, blank=True)
     email = models.EmailField("Почта", max_length=255, blank=True)
     mutual_sympathy = models.ManyToManyField('Profile', blank=True)
+    longitude = models.FloatField('Долгота', default=0, blank=True)
+    latitude = models.FloatField('Широта', default=0, blank=True)
 
 
 class Profile_evaluations(models.Model):

@@ -1,18 +1,22 @@
+from email import charset
+from operator import index
 from django.contrib.auth.models import User
 from rest_framework.views import APIView
-from rest_framework import status, filters, generics
+from rest_framework import status, generics, filters
 from rest_framework.response import Response
 from django.http import HttpResponse
 import os, shutil
 from PIL import Image
 import smtplib
+from math import sin, cos, radians, acos, sqrt
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import F, ExpressionWrapper, FloatField, Func
 
-
-from .serializers import ProfileSerializer, SearchFilterProfilesSerializer
+from .serializers import ProfileSerializer, SearchProfilesSerializer
 from .models import Profile, Profile_evaluations
 
 
-class DataUser:
+class DataUser: #Класс для хранения данных об учатнике
     def __init__(self, pk):
         self.pk = pk
         self.model_User = User.objects.get(pk=pk)
@@ -24,6 +28,8 @@ class DataUser:
         self.name = self.model_Profile.name
         self.surname = self.model_Profile.surname
         self.email = self.model_Profile.email
+        self.longitude = self.model_Profile.longitude
+        self.latitude = self.model_Profile.latitude
         self.mutual_sympathy = self.model_Profile.mutual_sympathy.all()
         self.liked_profiles = self.model_Profile_evaluations.liked_profiles
         self.disliked_profiles = self.model_Profile_evaluations.disliked_profiles
@@ -43,6 +49,8 @@ class DataUser:
         self.save_model_Profile.name = self.name
         self.save_model_Profile.surname = self.surname
         self.save_model_Profile.email = self.email
+        self.save_model_Profile.longitude = self.longitude
+        self.save_model_Profile.latitude = self.latitude
         self.save_model_Profile_evaluations.liked_profiles = self.liked_profiles
         self.save_model_Profile_evaluations.disliked_profiles = self.disliked_profiles
         self.save_model_User.save()
@@ -50,7 +58,7 @@ class DataUser:
         self.save_model_Profile_evaluations.save()
 
 
-class RegisterUserView(APIView):
+class RegisterUserView(APIView): #Регистрация участника
     def post(self, request):
         user = User.objects.create(
             username=request.data.get('username')
@@ -69,11 +77,15 @@ class RegisterUserView(APIView):
             created_user.email = request.data.get('email')
         if 'image' in request.data:
             created_user.image = add_watermark(request)
+        if 'longitude' in request.data:
+            created_user.longitude = float(request.data.get('longitude'))
+        if 'latitude' in request.data:
+            created_user.latitude = float(request.data.get('latitude'))
         created_user.save()
         return HttpResponse("User created", status=status.HTTP_201_CREATED)
 
 
-class DeleteUserView(APIView):
+class DeleteUserView(APIView): #Удаление участника
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
@@ -91,7 +103,7 @@ class DeleteUserView(APIView):
             return HttpResponse("Invalid username", status=status.HTTP_200_OK)
 
 
-class ChangeUserProfileView(APIView):
+class ChangeUserProfileView(APIView): #Изменение данных об учатнике
     def post(self, request):
         username = request.data.get("username")
         password = request.data.get("password")
@@ -110,6 +122,10 @@ class ChangeUserProfileView(APIView):
                     modifiable_user.email = request.data.get('email')
                 if 'image' in request.data:
                     modifiable_user.image = add_watermark(request)
+                if 'longitude' in request.data:
+                    modifiable_user.longitude = float(request.data.get('longitude'))
+                if 'latitude' in request.data:
+                    modifiable_user.latitude = float(request.data.get('latitude'))
                 modifiable_user.save()
                 return HttpResponse("User profile changed", status=status.HTTP_200_OK)
             else:
@@ -119,10 +135,7 @@ class ChangeUserProfileView(APIView):
 
 
 class ProfileAssessmentView(APIView): #Оценка пользователя другим пользователем
-    def get(self, request, pk):
-        profile = Profile.objects.get(pk=pk)
-        serializer = ProfileSerializer(profile)
-        return Response(serializer.data)
+    
     def post(self, request, pk):
         username = request.data.get("username") #Ввод в переменные данных оценивающего пользователя
         password = request.data.get("password")
@@ -134,29 +147,58 @@ class ProfileAssessmentView(APIView): #Оценка пользователя д�
                 if profile_for_assessment:
                     rating_user = DataUser(user.pk)
                     user_to_rate = DataUser(pk)
-                    if request.data.get("assessment") == "like":
-                        rating_user.liked_profiles.append(user_to_rate.pk)
-                        rating_user.save()
-                        if rating_user.pk in user_to_rate.liked_profiles:
-                            rating_user.add_mutual_sympathy(user_to_rate.model_Profile)
-                            user_to_rate.add_mutual_sympathy(rating_user.model_Profile)
-                            send_emails(rating_user, user_to_rate)
-                            return HttpResponse(f"Mutual sympathy, email: {user_to_rate.email}", status=status.HTTP_200_OK)
-                        return HttpResponse("Profile liked", status=status.HTTP_200_OK)
-                    elif request.data.get("assessment") == "dislike":
-                        rating_user.disliked_profiles.append(user_to_rate.pk)
-                        rating_user.save()
-                        return HttpResponse("Profile dislaked", status=status.HTTP_200_OK)
+                    if "assessment" in request.data:
+                        if request.data.get("assessment") == "like":
+                            rating_user.liked_profiles.append(user_to_rate.pk)
+                            rating_user.save()
+                            if rating_user.pk in user_to_rate.liked_profiles:
+                                rating_user.add_mutual_sympathy(user_to_rate.model_Profile)
+                                user_to_rate.add_mutual_sympathy(rating_user.model_Profile)
+                                send_emails(rating_user, user_to_rate)
+                                return HttpResponse(f"Mutual sympathy, email: {user_to_rate.email}", status=status.HTTP_200_OK)
+                            return HttpResponse("Profile liked", status=status.HTTP_200_OK)
+                        elif request.data.get("assessment") == "dislike":
+                            rating_user.disliked_profiles.append(user_to_rate.pk)
+                            rating_user.save()
+                            return HttpResponse("Profile dislaked", status=status.HTTP_200_OK)
+                    else:
+                        range_between_users = calc_dist(rating_user.latitude, rating_user.longitude, user_to_rate.latitude, user_to_rate.longitude)
+                        profile = Profile.objects.values().get(pk=pk)
+                        profile['distance'] = int(range_between_users)
+                        serializer = ProfileSerializer(data=profile)
+                        if serializer.is_valid():
+                            return Response(serializer.data)
                 else:
                     return HttpResponse("No such profile", status=status.HTTP_200_OK)
 
 
-class ProfilesListView(generics.ListAPIView):
-    queryset = Profile.objects.all()
-    serializer_class = SearchFilterProfilesSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['gender', 'name', 'surname']
+class ProfilesListView(generics.ListAPIView): #Сортировка участников по параметрам в search_fields
+    def get_queryset(self):
+        user_id = ''
+        for char in self.request.path_info[10:]:
+            if char != '/':
+                user_id += char
+            else:
+                break
+        user_id = int(user_id)
+        try:
+            distance = int(self.request.GET.get('distance'))
+            current_user = DataUser(user_id)
+            lon1 = current_user.longitude - distance / abs(cos(radians(current_user.latitude)) * 111.0)
+            lon2 = current_user.longitude + distance / abs(cos(radians(current_user.latitude)) * 111.0)
+            lat1 = current_user.latitude - (distance / 111.0)
+            lat2 = current_user.latitude + (distance / 111.0)
+            queryset = Profile.objects.filter(latitude__range=(lat1, lat2)).filter(longitude__range=(lon1, lon2))
+            return queryset
+        except TypeError:
+            queryset = Profile.objects.all()
+            return queryset
+    
+    serializer_class = SearchProfilesSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['gender', 'name', 'surname']
 
+        
 
 def add_watermark(request): #Добавление ватермарки на картинку
     base_image = Image.open(request.data.get('image')).convert("RGBA")
@@ -185,3 +227,13 @@ def send_emails(first_user, second_user): #Отправка сообщений �
     smtpObj.quit()
 
 
+def calc_dist(lat_a, long_a, lat_b, long_b):
+    earth_radius_in_km = 6371
+    lat_a = radians(lat_a)
+    lat_b = radians(lat_b)
+    delta_long = radians(long_a - long_b)
+    cos_x = (
+        sin(lat_a) * sin(lat_b) +
+        cos(lat_a) * cos(lat_b) * cos(delta_long)
+        )
+    return acos(cos_x) * earth_radius_in_km
